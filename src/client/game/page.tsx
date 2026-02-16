@@ -4,6 +4,7 @@ import { GameCard } from "../home/game_card";
 import { PartialActionProvider } from "../services/action";
 import { useGame } from "../services/game";
 import { ActiveGame } from "./active_game";
+import { EditorMode } from "./editor_mode/editor_mode";
 import { MapGridPreview, MapInfo } from "./map_info";
 import { Container, Segment } from "semantic-ui-react";
 import * as React from "react";
@@ -16,10 +17,14 @@ export function GamePage() {
       return (
         <Container>
           <GameCard game={game} />
-          <Segment>
-            <MapInfo gameKey={game.gameKey} variant={game.variant} />
-            <MapGridPreview gameKey={game.gameKey} />
-          </Segment>
+          {game.gameData != null ? (
+            <EditorMode game={game} />
+          ) : (
+            <Segment>
+              <MapInfo gameKey={game.gameKey} variant={game.variant} />
+              <MapGridPreview gameKey={game.gameKey} />
+            </Segment>
+          )}
         </Container>
       );
     case GameStatus.enum.ACTIVE:

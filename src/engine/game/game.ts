@@ -51,6 +51,11 @@ export class GameEngine {
     this.runLifecycle();
   }
 
+  startFromEditorData() {
+    this.lifecycle.set(new StartRound(1));
+    this.runLifecycle();
+  }
+
   processAction(actionName: string, data: unknown): void {
     this.lifecycle.set(
       new ProcessAction(

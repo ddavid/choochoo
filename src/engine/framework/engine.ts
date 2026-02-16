@@ -55,6 +55,10 @@ export class EngineDelegator {
     return this.getEngine(props.game.gameKey).start(props);
   }
 
+  startFromEditor(props: { game: LimitedGame }): GameState {
+    return this.getEngine(props.game.gameKey).startFromEditor(props);
+  }
+
   processAction(mapKey: GameKey, props: ProcessActionProps): GameState {
     return this.getEngine(mapKey).processAction(props);
   }
@@ -112,6 +116,14 @@ export class EngineProcessor {
         mapSettings.startingGrid,
         mapSettings.interCityConnections ?? [],
       );
+      return this.getGameState();
+    });
+  }
+
+  startFromEditor({ game }: { game: LimitedGame }): GameState {
+    assert(game.gameData != null, "editor data must be set");
+    return this.process(game, () => {
+      this.gameEngine.startFromEditorData();
       return this.getGameState();
     });
   }

@@ -430,6 +430,54 @@ export function useSetGameData() {
   return { setGameData, isPending };
 }
 
+export function useInitializeEditor(game: GameLiteApi) {
+  const onSuccess = useSetGameSuccess();
+  const me = useMe();
+  const { mutate, error, isPending } =
+    tsr.games.initializeEditor.useMutation();
+  handleError(isPending, error);
+
+  const perform = useCallback(
+    () =>
+      mutate(
+        { params: { gameId: game.id }, body: {} },
+        {
+          onSuccess: (body) => {
+            onSuccess(body);
+            emitSuccess();
+          },
+        },
+      ),
+    [game.id],
+  );
+
+  const canPerform =
+    me != null &&
+    game.status === GameStatus.enum.LOBBY &&
+    game.playerIds[0] === me.id &&
+    game.playerIds.length >= game.config.minPlayers;
+
+  return { canPerform, perform, isPending };
+}
+
+export function useSetEditorData() {
+  const onSuccess = useSetGameSuccess();
+  const game = useGame();
+  const { mutate, error, isPending } = tsr.games.setEditorData.useMutation();
+  handleError(isPending, error);
+
+  const setEditorData = useCallback(
+    (gameData: string) =>
+      mutate(
+        { params: { gameId: game.id }, body: { gameData } },
+        { onSuccess },
+      ),
+    [game.id],
+  );
+
+  return { setEditorData, isPending };
+}
+
 export function useStartGame(game: GameLiteApi) {
   const onSuccess = useSetGameSuccess();
   const me = useMe();

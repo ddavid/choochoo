@@ -329,4 +329,24 @@ export const gameContract = c.router({
     },
     summary: "Kicks the current player if they haven't responded in a while",
   },
+  initializeEditor: {
+    method: "POST",
+    pathParams: GameIdParams,
+    path: "/games/:gameId/editor/init",
+    body: z.object({ seed: z.string().optional() }),
+    responses: {
+      200: z.object({ game: GameApi }),
+    },
+    summary: "Initializes game data for editor mode on a lobby game",
+  },
+  setEditorData: {
+    method: "PUT",
+    pathParams: GameIdParams,
+    path: "/games/:gameId/editor/data",
+    body: z.object({ gameData: z.string() }),
+    responses: {
+      200: z.object({ game: GameApi }),
+    },
+    summary: "Updates game data for a lobby game in editor mode",
+  },
 });

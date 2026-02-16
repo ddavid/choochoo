@@ -21,6 +21,7 @@ import { useAwaitingPlayer } from "../components/awaiting_player";
 import { Username, UsernameList } from "../components/username";
 import {
   useDeleteGame,
+  useInitializeEditor,
   useJoinGame,
   useLeaveGame,
   useStartGame,
@@ -83,6 +84,7 @@ export function GameCard({ game, hideStatus }: GameCardProps) {
         <ViewButton game={game} />
         <LeaveButton game={game} />
         <JoinButton game={game} />
+        <EditorButton game={game} />
         <StartButton game={game} />
         <DeleteButton game={game} />
       </CardContent>
@@ -146,6 +148,25 @@ function JoinButton({ game }: GameButtonProps) {
   return (
     <Button primary disabled={isPending} onClick={perform} data-join-button>
       Join
+    </Button>
+  );
+}
+
+function EditorButton({ game }: GameButtonProps) {
+  const { canPerform, perform, isPending } = useInitializeEditor(game);
+  if (!canPerform) {
+    return <></>;
+  }
+
+  return (
+    <Button
+      color="orange"
+      disabled={isPending}
+      onClick={perform}
+      data-editor-button
+    >
+      <Icon name="edit" />
+      Editor
     </Button>
   );
 }

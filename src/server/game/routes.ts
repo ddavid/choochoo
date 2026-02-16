@@ -19,6 +19,7 @@ import { GameHistoryDao } from "./history_dao";
 import {
   abandonGame,
   inTheLead,
+  initializeEditor,
   performAction,
   remainingPlayers,
   startGame,
@@ -526,6 +527,35 @@ const router = initServer().router(gameContract, {
       { invalidInput: "cannot kick until kick duration has passed" },
     );
     await abandonGame(game, game.activePlayerId, /* kicked= */ true);
+    return { status: 200, body: { game: game.toApi() } };
+  },
+
+  async initializeEditor({ req, params, body }) {
+    const userId = req.session.userId;
+    assert(userId != null, { permissionDenied: true });
+
+    const game = await initializeEditor(params.gameId, userId, body.seed);
+    return { status: 200, body: { game } };
+  },
+
+  async setEditorData({ req, params, body }) {
+    const userId = req.session.userId;
+    assert(userId != null, { permissionDenied: true });
+
+    const game = await GameDao.findByPk(params.gameId);
+    assert(game != null, { notFound: true });
+    assert(game.status === GameStatus.enum.LOBBY, {
+      invalidInput: "can only edit game data in lobby",
+    });
+    assert(game.playerIds[0] === userId, {
+      permissionDenied: true,
+    });
+    assert(game.gameData != null, {
+      invalidInput: "editor must be initialized first",
+    });
+
+    game.gameData = body.gameData;
+    await game.save();
     return { status: 200, body: { game: game.toApi() } };
   },
 });

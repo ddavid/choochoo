@@ -18,6 +18,43 @@ import { notifyTurn } from "../util/turn_notification";
 import { GameDao } from "./dao";
 import { GameHistoryDao } from "./history_dao";
 
+export async function initializeEditor(
+  gameId: number,
+  enforceOwner: number,
+  inputSeed?: string,
+): Promise<GameApi> {
+  const game = await GameDao.findByPk(gameId);
+
+  assert(game != null, { notFound: true });
+  assert(game.status === GameStatus.enum.LOBBY, {
+    invalidInput: "can only initialize editor for a lobby game",
+  });
+  assert(game.playerIds[0] === enforceOwner, {
+    permissionDenied: true,
+  });
+  assert(
+    game.playerIds.length >= game.toLiteApi().config.minPlayers,
+    "not enough players to initialize editor",
+  );
+
+  const users = await Promise.all(
+    game.playerIds.map((id) => UserDao.getUser(id)),
+  );
+
+  const { gameData } = EngineDelegator.singleton.start({
+    players: users.map((user) => ({
+      playerId: user!.id,
+      preferredColors: user!.preferredColors,
+    })),
+    seed: inputSeed,
+    game: { ...game.toLimitedGame(), gameData: undefined },
+  });
+
+  game.gameData = gameData;
+  const newGame = await game.save();
+  return newGame.toApi();
+}
+
 export async function startGame(
   gameId: number,
   enforceOwner?: number,
@@ -37,12 +74,28 @@ export async function startGame(
     "not enough players to start the game",
   );
 
-  const users = await Promise.all(
-    game.playerIds.map((id) => UserDao.getUser(id)),
-  );
+  const hasEditorData = game.gameData != null;
 
-  const { gameData, logs, activePlayerId, seed } =
-    EngineDelegator.singleton.start({
+  let gameData: string;
+  let logs: string[];
+  let activePlayerId: number | undefined;
+  let seed: string | undefined;
+
+  if (hasEditorData) {
+    // Use the pre-existing editor state. Skip normal initialization
+    // and just set up the lifecycle from the editor data.
+    const result = EngineDelegator.singleton.startFromEditor({
+      game: game.toLimitedGame(),
+    });
+    gameData = result.gameData;
+    logs = result.logs;
+    activePlayerId = result.activePlayerId;
+    seed = result.seed;
+  } else {
+    const users = await Promise.all(
+      game.playerIds.map((id) => UserDao.getUser(id)),
+    );
+    const result = EngineDelegator.singleton.start({
       players: users.map((user) => ({
         playerId: user!.id,
         preferredColors: user!.preferredColors,
@@ -50,6 +103,11 @@ export async function startGame(
       seed: inputSeed,
       game: game.toLimitedGame(),
     });
+    gameData = result.gameData;
+    logs = result.logs;
+    activePlayerId = result.activePlayerId;
+    seed = result.seed;
+  }
 
   game.turnStartTime = new Date();
   game.gameData = gameData;

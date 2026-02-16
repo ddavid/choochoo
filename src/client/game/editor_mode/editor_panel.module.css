@@ -1,0 +1,60 @@
+.editorPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ownerSelector {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.playerEditor {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.playerEditor:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.playerHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-weight: bold;
+}
+
+.playerFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.numberField {
+  max-width: 130px;
+}
+
+.numberField input {
+  width: 60px !important;
+}
+
+.bagSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.goodAdder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
