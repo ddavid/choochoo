@@ -45,16 +45,43 @@
   width: 60px !important;
 }
 
-.bagSummary {
+.turnOrderRow {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
 }
 
-.goodAdder {
+.turnOrderIndex {
+  min-width: 20px;
+  font-weight: bold;
+}
+
+.turnOrderButtons {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.availableCity {
+  padding: 4px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.availableCity:last-child {
+  border-bottom: none;
+}
+
+.availableCityHeader {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.availableCityGoods {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  flex: 1;
 }

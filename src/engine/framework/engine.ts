@@ -126,7 +126,17 @@ export class EngineProcessor {
       // Shuffle the bag so no one knows the draw order.
       const bag = this.state.get(BAG);
       this.state.set(BAG, this.random.shuffle([...bag]));
-      this.gameEngine.startFromEditorData();
+
+      // Read the starting round from editor state, then delete it so
+      // RoundEngine.start()'s initState call works normally.
+      const startingRound = this.state.isInitialized(ROUND)
+        ? (this.state.get(ROUND) as number)
+        : 1;
+      if (this.state.isInitialized(ROUND)) {
+        this.state.delete(ROUND);
+      }
+
+      this.gameEngine.startFromEditorData(startingRound);
       return this.getGameState();
     });
   }

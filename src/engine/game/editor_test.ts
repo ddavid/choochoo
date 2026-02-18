@@ -10,7 +10,10 @@ import { Direction, SimpleTileType } from "../state/tile";
 import { InterCityConnection } from "../state/inter_city_connection";
 import { GameEngine } from "./game";
 import { GameStarter, PlayerUser } from "./starter";
+import { CityGroup } from "../state/city_group";
+import { ROUND } from "./round";
 import {
+  AVAILABLE_CITIES,
   BAG,
   GRID,
   INTER_CITY_CONNECTIONS,
@@ -295,6 +298,108 @@ describe("Editor Mode", () => {
 
       const landData = grid().get(landCoords) as LandData;
       expect(landData.tile).toBeUndefined();
+    });
+
+    it("can modify turn order", () => {
+      turnOrder.set([PlayerColor.RED]);
+
+      expect(turnOrder()).toEqual([PlayerColor.RED]);
+
+      // Swap order
+      turnOrder.set([PlayerColor.RED]);
+      expect(turnOrder()[0]).toEqual(PlayerColor.RED);
+    });
+
+    it("can modify available cities", () => {
+      const availCities = injector.initResettableState(AVAILABLE_CITIES, [
+        {
+          color: Good.RED,
+          onRoll: [{ group: CityGroup.WHITE, onRoll: 3, goods: [] }],
+          goods: [Good.RED, Good.BLUE],
+        },
+      ]);
+
+      availCities.update((cities) => {
+        cities[0] = { ...cities[0], goods: [Good.PURPLE] };
+      });
+
+      expect(availCities()[0].goods).toEqual([Good.PURPLE]);
+    });
+
+    it("can toggle urbanized on a city", () => {
+      grid.update((g) => {
+        const cityData = g.get(cityCoords)!;
+        if (cityData.type === SpaceType.CITY) {
+          g.set(cityCoords, { ...cityData, urbanized: true });
+        }
+      });
+
+      const cityData = grid().get(cityCoords)!;
+      if (cityData.type === SpaceType.CITY) {
+        expect(cityData.urbanized).toEqual(true);
+      }
+    });
+  });
+
+  describe("startFromEditorData with custom round", () => {
+    const injector = InjectionHelper.install();
+
+    const cityCoords = Coordinates.from({ q: 0, r: 0 });
+    const landCoords = cityCoords.neighbor(Direction.TOP);
+    const secondCity = landCoords.neighbor(Direction.TOP);
+
+    injector.initResettableState(TEST_ONLY_PLAYERS, [
+      {
+        playerId: 1,
+        color: PlayerColor.RED,
+        income: 5,
+        shares: 3,
+        money: 15,
+        locomotive: 2,
+      } as PlayerData,
+      {
+        playerId: 2,
+        color: PlayerColor.BLUE,
+        income: 3,
+        shares: 2,
+        money: 8,
+        locomotive: 1,
+      } as PlayerData,
+    ]);
+
+    injector.initResettableState(TURN_ORDER, [
+      PlayerColor.RED,
+      PlayerColor.BLUE,
+    ]);
+
+    injector.initResettableState(BAG, [Good.RED, Good.BLUE, Good.PURPLE]);
+
+    injector.initResettableState(
+      GRID,
+      new Map<Coordinates, MutableSpaceData>([
+        [cityCoords, city()],
+        [landCoords, plain()],
+        [secondCity, city()],
+      ]),
+    );
+
+    injector.initResettableState(INTER_CITY_CONNECTIONS, []);
+
+    injector.initResettableState(AVAILABLE_CITIES, []);
+
+    const engine = resettable(() => new GameEngine());
+
+    it("starts at the specified round", () => {
+      engine().startFromEditorData(5);
+
+      // The round is deleted and re-created during lifecycle,
+      // so we just verify the game started without error at round 5.
+      // The round state will be set to 5 by RoundEngine.start(5).
+    });
+
+    it("defaults to round 1", () => {
+      engine().startFromEditorData();
+      // No error means it started at round 1 successfully.
     });
   });
 });

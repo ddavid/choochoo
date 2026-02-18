@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   Button,
+  Checkbox,
   Label,
   Modal,
   ModalContent,
@@ -249,6 +250,17 @@ function InternalEditorMap({ game, onGameDataChange }: EditorMapProps) {
             return s;
           });
         }}
+        onToggleUrbanized={(urbanized) => {
+          if (goodDialogCoords == null) return;
+          updateGridSpace(goodDialogCoords, (s) => ({
+            ...s,
+            urbanized: urbanized || undefined,
+          }));
+          // Update local dialog state too
+          if (goodDialogCity) {
+            setGoodDialogCity({ ...goodDialogCity, urbanized } as CityData);
+          }
+        }}
         onClose={() => {
           setGoodDialogCoords(undefined);
           setGoodDialogCity(undefined);
@@ -263,6 +275,7 @@ interface EditorGoodDialogProps {
   cityData: CityData | undefined;
   onAdd(good: Good): void;
   onRemove(good: Good): void;
+  onToggleUrbanized(urbanized: boolean): void;
   onClose(): void;
 }
 
@@ -271,6 +284,7 @@ function EditorGoodDialog({
   cityData,
   onAdd,
   onRemove,
+  onToggleUrbanized,
   onClose,
 }: EditorGoodDialogProps) {
   const allGoods = [
@@ -288,6 +302,13 @@ function EditorGoodDialog({
     <Modal closeIcon open={isOpen} onClose={onClose} size="small">
       <ModalHeader>Edit goods on {cityData?.name ?? "city"}</ModalHeader>
       <ModalContent>
+        <div style={{ marginBottom: "12px" }}>
+          <Checkbox
+            label="Urbanized"
+            checked={cityData?.urbanized ?? false}
+            onChange={(_, data) => onToggleUrbanized(!!data.checked)}
+          />
+        </div>
         <div>
           <Label>Current goods:</Label>
           <div style={{ margin: "8px 0" }}>
