@@ -14,7 +14,7 @@ import { PlayerHelper } from "../game/player";
 import { Random } from "../game/random";
 import { ROUND, RoundEngine } from "../game/round";
 import { PlayerUser } from "../game/starter";
-import { injectCurrentPlayer } from "../game/state";
+import { BAG, injectCurrentPlayer } from "../game/state";
 import { MOVE_STATE } from "../move/state";
 import { getPhaseString, Phase } from "../state/phase";
 import { inject, injectState, setInjectionContext } from "./execution_context";
@@ -123,6 +123,9 @@ export class EngineProcessor {
   startFromEditor({ game }: { game: LimitedGame }): GameState {
     assert(game.gameData != null, "editor data must be set");
     return this.process(game, () => {
+      // Shuffle the bag so no one knows the draw order.
+      const bag = this.state.get(BAG);
+      this.state.set(BAG, this.random.shuffle([...bag]));
       this.gameEngine.startFromEditorData();
       return this.getGameState();
     });

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import {
   Button,
   Dropdown,
@@ -8,13 +8,11 @@ import {
   Label,
   Segment,
 } from "semantic-ui-react";
-import { Good, goodToString } from "../../../engine/state/good";
 import {
   MutablePlayerData,
   PlayerColor,
   playerColorToString,
 } from "../../../engine/state/player";
-import { SerializedGameData } from "../../../engine/framework/state";
 import { Username } from "../../components/username";
 import { useSetEditorData } from "../../services/game";
 import { EditorTool, useEditorContext } from "./editor_context";
@@ -24,17 +22,13 @@ import * as styles from "./editor_panel.module.css";
 interface EditorPanelProps {
   gameData: string;
   players: MutablePlayerData[];
-  bag: Good[];
   onPlayerUpdate(players: MutablePlayerData[]): void;
-  onBagUpdate(bag: Good[]): void;
 }
 
 export function EditorPanel({
   gameData,
   players,
-  bag,
   onPlayerUpdate,
-  onBagUpdate,
 }: EditorPanelProps) {
   const { currentTool, setTool, selectedOwner, setOwner } = useEditorContext();
   const { setEditorData, isPending } = useSetEditorData();
@@ -124,12 +118,6 @@ export function EditorPanel({
         ))}
       </Segment>
 
-      <Segment>
-        <Header as="h3">Bag ({bag.length} cubes)</Header>
-        <BagSummary bag={bag} />
-        <GoodAdder bag={bag} onBagUpdate={onBagUpdate} />
-      </Segment>
-
       <Button
         primary
         fluid
@@ -207,73 +195,3 @@ function NumberField({ label, value, onChange, min }: NumberFieldProps) {
   );
 }
 
-function BagSummary({ bag }: { bag: Good[] }) {
-  const counts = new Map<Good, number>();
-  for (const good of bag) {
-    counts.set(good, (counts.get(good) ?? 0) + 1);
-  }
-  return (
-    <div className={styles.bagSummary}>
-      {[Good.RED, Good.BLUE, Good.PURPLE, Good.YELLOW, Good.BLACK, Good.WHITE]
-        .filter((g) => (counts.get(g) ?? 0) > 0)
-        .map((good) => (
-          <Label key={good} size="small">
-            {goodToString(good)}: {counts.get(good) ?? 0}
-          </Label>
-        ))}
-    </div>
-  );
-}
-
-interface GoodAdderProps {
-  bag: Good[];
-  onBagUpdate(bag: Good[]): void;
-}
-
-function GoodAdder({ bag, onBagUpdate }: GoodAdderProps) {
-  const goodOptions = [
-    Good.RED,
-    Good.BLUE,
-    Good.PURPLE,
-    Good.YELLOW,
-    Good.BLACK,
-    Good.WHITE,
-  ].map((g) => ({
-    key: g,
-    text: goodToString(g),
-    value: g,
-  }));
-
-  const [selectedGood, setSelectedGood] = useState<Good>(Good.RED);
-
-  return (
-    <div className={styles.goodAdder}>
-      <Dropdown
-        selection
-        compact
-        options={goodOptions}
-        value={selectedGood}
-        onChange={(_, data) => setSelectedGood(data.value as Good)}
-      />
-      <Button
-        size="small"
-        onClick={() => onBagUpdate([...bag, selectedGood])}
-      >
-        Add to bag
-      </Button>
-      <Button
-        size="small"
-        onClick={() => {
-          const idx = bag.lastIndexOf(selectedGood);
-          if (idx >= 0) {
-            const newBag = [...bag];
-            newBag.splice(idx, 1);
-            onBagUpdate(newBag);
-          }
-        }}
-      >
-        Remove from bag
-      </Button>
-    </div>
-  );
-}
