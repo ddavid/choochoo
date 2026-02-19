@@ -3,7 +3,6 @@ import {
   Button,
   Dropdown,
   Header,
-  Icon,
   Input,
   Label,
   Segment,
@@ -13,11 +12,12 @@ import { Good, goodToString } from "../../../engine/state/good";
 import {
   MutablePlayerData,
   PlayerColor,
+  eligiblePlayerColors,
   playerColorToString,
 } from "../../../engine/state/player";
 import { Username } from "../../components/username";
 import { useSetEditorData } from "../../services/game";
-import { EditorTool, useEditorContext } from "./editor_context";
+import { useEditorContext } from "./editor_context";
 import { PlayerColorIndicator } from "../player_stats";
 import * as styles from "./editor_panel.module.css";
 
@@ -27,10 +27,15 @@ interface EditorPanelProps {
   turnOrder: PlayerColor[];
   roundNumber: number;
   availableCities: MutableAvailableCity[];
+  canUndo: boolean;
+  canRedo: boolean;
   onPlayerUpdate(players: MutablePlayerData[]): void;
   onTurnOrderUpdate(turnOrder: PlayerColor[]): void;
   onRoundUpdate(round: number): void;
   onAvailableCitiesUpdate(cities: MutableAvailableCity[]): void;
+  onColorChange(playerIndex: number, newColor: PlayerColor): void;
+  onUndo(): void;
+  onRedo(): void;
 }
 
 export function EditorPanel({
@@ -39,12 +44,17 @@ export function EditorPanel({
   turnOrder,
   roundNumber,
   availableCities,
+  canUndo,
+  canRedo,
   onPlayerUpdate,
   onTurnOrderUpdate,
   onRoundUpdate,
   onAvailableCitiesUpdate,
+  onColorChange,
+  onUndo,
+  onRedo,
 }: EditorPanelProps) {
-  const { currentTool, setTool, selectedOwner, setOwner } = useEditorContext();
+  const { selectedOwner, setOwner } = useEditorContext();
   const { setEditorData, isPending } = useSetEditorData();
 
   const ownerOptions = [
@@ -63,57 +73,38 @@ export function EditorPanel({
   return (
     <div className={styles.editorPanel}>
       <Segment>
-        <Header as="h3">Editor Tools</Header>
-        <Button.Group fluid>
-          <Button
-            active={currentTool === EditorTool.TILE}
-            onClick={() => setTool(EditorTool.TILE)}
-            icon
-            labelPosition="left"
-          >
-            <Icon name="road" />
-            Tile
-          </Button>
-          <Button
-            active={currentTool === EditorTool.GOOD}
-            onClick={() => setTool(EditorTool.GOOD)}
-            icon
-            labelPosition="left"
-          >
-            <Icon name="cube" />
-            Good
-          </Button>
-          <Button
-            active={currentTool === EditorTool.CONNECTION}
-            onClick={() => setTool(EditorTool.CONNECTION)}
-            icon
-            labelPosition="left"
-          >
-            <Icon name="linkify" />
-            Link
-          </Button>
-          <Button
-            active={currentTool === EditorTool.ERASER}
-            onClick={() => setTool(EditorTool.ERASER)}
-            icon
-            labelPosition="left"
-          >
-            <Icon name="eraser" />
-            Erase
-          </Button>
-        </Button.Group>
-
-        <div className={styles.ownerSelector}>
-          <Label>Owner:</Label>
-          <Dropdown
-            selection
-            options={ownerOptions}
-            value={selectedOwner ?? -1}
-            onChange={(_, data) => {
-              const val = data.value as number;
-              setOwner(val === -1 ? undefined : (val as PlayerColor));
-            }}
-          />
+        <div className={styles.topActions}>
+          <div className={styles.ownerSelector}>
+            <Label>Owner:</Label>
+            <Dropdown
+              selection
+              compact
+              options={ownerOptions}
+              value={selectedOwner ?? -1}
+              onChange={(_, data) => {
+                const val = data.value as number;
+                setOwner(val === -1 ? undefined : (val as PlayerColor));
+              }}
+            />
+          </div>
+          <div className={styles.undoRedo}>
+            <Button
+              icon="undo"
+              size="small"
+              compact
+              disabled={!canUndo}
+              onClick={onUndo}
+              title="Undo"
+            />
+            <Button
+              icon="redo"
+              size="small"
+              compact
+              disabled={!canRedo}
+              onClick={onRedo}
+              title="Redo"
+            />
+          </div>
         </div>
       </Segment>
 
@@ -142,11 +133,13 @@ export function EditorPanel({
           <PlayerEditor
             key={player.color}
             player={player}
+            usedColors={players.map((p) => p.color)}
             onChange={(updated) => {
               const newPlayers = [...players];
               newPlayers[index] = updated;
               onPlayerUpdate(newPlayers);
             }}
+            onColorChange={(newColor) => onColorChange(index, newColor)}
           />
         ))}
       </Segment>
@@ -321,18 +314,33 @@ function AvailableCitiesEditor({
 
 interface PlayerEditorProps {
   player: MutablePlayerData;
+  usedColors: PlayerColor[];
   onChange(player: MutablePlayerData): void;
+  onColorChange(newColor: PlayerColor): void;
 }
 
-function PlayerEditor({ player, onChange }: PlayerEditorProps) {
+function PlayerEditor({ player, usedColors, onChange, onColorChange }: PlayerEditorProps) {
   const update = (field: keyof MutablePlayerData, value: number) => {
     onChange({ ...player, [field]: value });
   };
 
+  const colorOptions = eligiblePlayerColors
+    .filter((c) => c === player.color || !usedColors.includes(c))
+    .map((c) => ({
+      key: c,
+      text: playerColorToString(c),
+      value: c,
+    }));
+
   return (
     <div className={styles.playerEditor}>
       <div className={styles.playerHeader}>
-        <PlayerColorIndicator playerColor={player.color} currentTurn={false} />
+        <Dropdown
+          inline
+          options={colorOptions}
+          value={player.color}
+          onChange={(_, data) => onColorChange(data.value as PlayerColor)}
+        />
         <Username userId={player.playerId} />
       </div>
       <div className={styles.playerFields}>

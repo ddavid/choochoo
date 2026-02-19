@@ -1,180 +1,102 @@
-# Editor Mode Implementation Plan
+# Editor Mode — Phase 2 Plan
 
 ## Overview
 
-Add a GUI-based Editor mode for LOBBY games that lets the game owner set up a board state before starting, enabling replication of in-progress physical games (e.g. Disco Inferno). The editor allows placing tiles, goods, and setting player stats — like a god mode with no game-rule validation.
+Refactor the editor interaction model and add missing features. The current mode-based tool selector (Tile/Good/Link/Erase) is replaced with context-sensitive actions that appear based on what the user clicks. Additional features: urbanize towns with available cities, editable player colors, and undo/redo.
 
-## Key Design Decisions
+## Analysis of current modes
 
-- **LOBBY-only**: Editor mode is available only for games in LOBBY status. Started (ACTIVE) games keep the existing admin-only raw JSON editor.
-- **Game owner access**: The game owner (first player) can use editor mode once enough players have joined.
-- **Two-phase approach**: First "initialize" the game state (assigns player colors, draws initial cubes), then edit it via GUI. When the game is started, the edited state is used directly.
-- **No validation bypass needed in the engine**: Edits happen at the data level — directly modifying the serialized game state (grid, players, bag, connections) — not through the action pipeline.
+Current modes and what they gate:
 
-## Implementation Steps
+| Mode | Land (empty) | Land (has tile) | City | Inter-city connection |
+|------|-------------|----------------|------|----------------------|
+| TILE | opens tile dialog | opens tile dialog | nothing | nothing |
+| GOOD | nothing | nothing | opens good dialog | nothing |
+| CONNECTION | nothing | nothing | nothing | sets owner |
+| ERASER | nothing | removes tile | removes one good | removes owner |
 
-### 1. Backend: Add `initializeEditor` API endpoint
+**Key insight**: The context (what was clicked) already determines the action. There's no scenario where clicking the same thing should do different things depending on the mode — except for inter-city connections (set owner vs erase owner), which can be unified into a single dialog.
 
-**Files**: `src/api/game.ts`, `src/server/game/routes.ts`
+## Changes
 
-Add a new contract endpoint:
-```
-POST /games/:gameId/editor/init
-```
+### 1. Remove tool modes, use context-sensitive click handling
 
-- Requires: user is the game owner, game status is LOBBY, minimum players joined
-- Calls `EngineDelegator.singleton.start()` to generate initial game state
-- Saves the resulting `gameData` on the GameDao **without** changing status to ACTIVE
-- Returns the updated game (still LOBBY, but now with `gameData`)
+**Files**: `editor_map.tsx`, `editor_context.tsx`, `editor_panel.tsx`
 
-### 2. Backend: Add `setEditorData` API endpoint
+Replace the `EditorTool` enum and mode selector buttons with a single click handler that inspects what was clicked:
 
-**Files**: `src/api/game.ts`, `src/server/game/routes.ts`
+- **Land (no tile)**: open tile dialog (same as before)
+- **Land (has tile)**: open a small dialog offering "Replace tile" or "Erase tile"
+- **City**: open good dialog (same as now, already has urbanized toggle)
+- **Inter-city connection**: open a small dialog to pick owner or clear owner
 
-Add a new contract endpoint:
-```
-PUT /games/:gameId/editor/data
-```
+The `EditorContext` still keeps `selectedOwner` (needed for tile placement and connection assignment). Remove `currentTool`/`setTool`.
 
-- Requires: user is the game owner, game status is LOBBY, game has gameData (editor initialized)
-- Accepts `{ gameData: string }` body (same format as admin `setGameData`)
-- Saves updated gameData to the LOBBY game
-- This allows the game owner (not just admin) to save editor changes
+The tool selector buttons in `EditorPanel` are removed. The owner selector stays.
 
-### 3. Backend: Modify `startGame` to use existing editor state
+### 2. Urbanize towns from available cities
 
-**Files**: `src/server/game/logic.ts`
+**Files**: `editor_map.tsx`
 
-When `startGame()` is called:
-- If the game already has `gameData` (set by editor), skip `EngineDelegator.singleton.start()`
-- Just set `status = ACTIVE`, assign `activePlayerId` from the existing state, set `turnStartTime`
-- Still create the GameHistory record for the start event
-- Emit turn notification as normal
+When clicking a **town** (a Land with `hasTown()` but no tile to worry about — towns are Land spaces with a `townName`), offer an "Urbanize" option. This shows a list of available cities (from the editor state). Selecting one:
 
-### 4. Frontend: Add editor initialization hook
+1. Replaces the Land space with a City space (same as `UrbanizeAction.process()` does):
+   - `type: CITY`, `name: townName`, `color: city.color`, `goods: city.goods`, `urbanized: true`, `onRoll: city.onRoll`
+2. Removes that city from `availableCities` in the gameData
 
-**File**: `src/client/services/game.ts`
+This needs both `updateGridSpace` (to change the space) and an `updateAvailableCities` callback (to remove the used city). The `EditorMode` component already has `availableCities` and `onAvailableCitiesUpdate`.
 
-- `useInitializeEditor(game)`: calls `POST /games/:gameId/editor/init`
-  - `canPerform`: user is owner, game is LOBBY, min players met, no gameData yet
-  - Returns the game with initialized gameData
-- `useSetEditorData()`: calls `PUT /games/:gameId/editor/data`
-  - Used to save editor changes back to the server
+For the click handler: check `space instanceof Land && space.hasTown()`. Open a dialog that shows available cities to pick from, plus the existing tile dialog option.
 
-### 5. Frontend: Editor mode context and tools
+Actually, simplifying further: when clicking a town (Land with townName), show a dialog with two sections:
+- "Place tile" (opens tile dialog as before)
+- "Urbanize" with a list of available cities to pick
 
-**New file**: `src/client/game/editor_mode/editor_context.tsx`
+When clicking empty land (no town), just open tile dialog directly.
 
-React context providing:
-- `currentTool`: which editing tool is active (TILE, GOOD, PLAYER, CONNECTION, ERASER)
-- `selectedOwner`: which PlayerColor owns items being placed
-- `setTool()`, `setOwner()`: state setters
-- Parsed game state for reading/modifying
+### 3. Editable player colors
 
-### 6. Frontend: Editor panel component
+**Files**: `editor_panel.tsx`, `editor_mode.tsx`
 
-**New file**: `src/client/game/editor_mode/editor_panel.tsx`
+Add a color dropdown next to each player in the Players section. The dropdown shows all `eligiblePlayerColors` minus colors already used by other players. Changing a player's color:
+1. Updates `players[i].color` in gameData
+2. Updates `turnOrder` to replace the old color with the new one
+3. Updates any tile `owners` on the grid that reference the old color
+4. Updates any inter-city connection owners that reference the old color
 
-A sidebar/panel UI containing:
-- **Tool selector**: buttons to switch between Tile, Good, Player Stats, Connection, and Eraser tools
-- **Owner selector**: dropdown or color buttons to pick which player color owns the placed item
-- **Player stats editor**: editable fields for each player's money, income, shares, locomotive
-- **Bag editor**: display/edit goods remaining in the bag
-- **Save button**: persists current state to server via `useSetEditorData`
+Since this is a "replace all references" operation, it's cleanest to do a string-level find/replace on the serialized gameData, or walk through the relevant arrays. The serialized format stores `PlayerColor` as a number, so the safest approach is to parse, walk all relevant fields, and re-serialize.
 
-### 7. Frontend: Editor map component
+### 4. Undo/Redo
 
-**New file**: `src/client/game/editor_mode/editor_map.tsx`
+**Files**: `editor_mode.tsx`
 
-An interactive map for editor mode. Wraps `HexGrid` with editor-specific click handlers:
+The editor already manages `localGameData` as a string state. Undo/redo is straightforward:
 
-- **Tile tool**: clicking a land hex opens a tile selection dialog (all tile types, all orientations, no validation). The placed tile gets the selected owner color.
-- **Good tool**: clicking a city opens a dialog to add/remove goods (select color from dropdown).
-- **Connection tool**: clicking an inter-city connection toggles ownership to the selected player color.
-- **Eraser tool**: clicking a hex with a tile removes it; clicking a city good removes it.
+- Maintain a `history: string[]` array and a `historyIndex: number`
+- Every time `setLocalGameData` is called (from any source — map click, panel edit, etc.), push the new state onto history and advance the index
+- "Undo" decrements `historyIndex` and sets `localGameData = history[historyIndex]`
+- "Redo" increments `historyIndex` and sets `localGameData = history[historyIndex]`
+- Buttons in `EditorPanel` (or at the top): Undo (disabled when index=0), Redo (disabled when index=end)
 
-### 8. Frontend: Editor tile dialog
+This gives free undo/redo for every operation since all state changes flow through the same `localGameData` string.
 
-**New file**: `src/client/game/editor_mode/editor_tile_dialog.tsx`
+### 5. Tests
 
-Similar to the existing `BuildingDialog` but:
-- Shows ALL tile types and orientations (no validation filtering)
-- No cost display
-- Selected tile is placed immediately with the current owner color
-- Uses existing tile rendering components for preview
+**File**: `editor_test.ts`
 
-### 9. Frontend: Modify GamePage for editor mode
+New tests (Jasmine + InjectionHelper pattern, matching existing tests):
 
-**File**: `src/client/game/page.tsx`
-
-In the LOBBY branch:
-- If `game.gameData` exists (editor initialized), render the editor UI (EditorPanel + EditorMap) instead of the static `MapGridPreview`
-- Add "Initialize Editor" button (shown when `canPerform` from `useInitializeEditor`)
-- Keep the existing `GameCard` with join/leave/start buttons
-
-### 10. Frontend: Modify GameCard for editor button
-
-**File**: `src/client/home/game_card.tsx`
-
-Add an "Editor Mode" button next to the Start button:
-- Visible when: user is game owner, game is LOBBY, min players met, no gameData yet
-- On click: calls `useInitializeEditor` to generate initial state
-- After initialization, the page switches to editor view
-
-### 11. Tests
-
-**New file**: `src/engine/game/editor_test.ts`
-
-Unit tests using the existing Jasmine + InjectionHelper pattern:
-
-1. **Editor initialization**:
-   - Test that `initializeEditor` creates valid gameData for a LOBBY game
-   - Test that initialized gameData contains correct player count and colors
-   - Test that grid is properly populated with starting map data
-   - Test that bag, available cities, and connections are initialized
-
-2. **Start with editor data**:
-   - Test that `startGame` with pre-existing gameData preserves the editor state
-   - Test that `startGame` with pre-existing gameData sets status to ACTIVE
-   - Test that `startGame` with pre-existing gameData sets correct activePlayerId
-   - Test that gameData modifications (e.g. placed tiles) survive start
-
-3. **Guard rails**:
-   - Test that editor init rejects ACTIVE games
-   - Test that editor init rejects games without minimum players
-   - Test that `setEditorData` rejects ACTIVE games
-   - Test that `setEditorData` rejects non-owner users
-   - Test that `setEditorData` rejects games without initialized editor state (no gameData)
-
-**New file**: `src/server/game/editor_route_test.ts`
-
-Server-side route tests (if the project adds route-level testing):
-
-4. **API endpoint tests**:
-   - Test `POST /games/:gameId/editor/init` returns 200 with gameData
-   - Test `PUT /games/:gameId/editor/data` saves and returns updated game
-   - Test endpoints reject unauthorized users
-   - Test endpoints reject wrong game states
+- **Urbanize in editor**: Set up a grid with a town, create an available city, simulate the urbanization (replace land→city, remove from available cities). Verify the resulting grid space is a city with correct fields and `urbanized: true`, and that the available city was removed.
+- **Player color change**: Set up two players, change one's color, verify turnOrder updated, verify tile owners updated with new color.
+- **Round number with startFromEditorData**: Already tested. Verify round 5 starts correctly.
+- **Undo/redo**: This is purely UI state management (history array), not engine logic. No engine-level test needed — it's React state.
 
 ## File Change Summary
 
-| File | Change Type | Description |
-|------|-------------|-------------|
-| `src/api/game.ts` | Modified | Add `initializeEditor` and `setEditorData` contract endpoints |
-| `src/server/game/routes.ts` | Modified | Add route handlers for editor endpoints |
-| `src/server/game/logic.ts` | Modified | Modify `startGame` to use existing gameData when present |
-| `src/client/services/game.ts` | Modified | Add `useInitializeEditor` and `useSetEditorData` hooks |
-| `src/client/game/page.tsx` | Modified | Render editor mode in LOBBY when gameData exists |
-| `src/client/home/game_card.tsx` | Modified | Add "Editor Mode" initialization button |
-| `src/client/game/editor_mode/editor_context.tsx` | New | Editor state context (tool, owner selection) |
-| `src/client/game/editor_mode/editor_panel.tsx` | New | Editor toolbar and player stats UI |
-| `src/client/game/editor_mode/editor_map.tsx` | New | Interactive map with editor click handlers |
-| `src/client/game/editor_mode/editor_tile_dialog.tsx` | New | Tile selection dialog for editor (no validation) |
-| `src/engine/game/editor_test.ts` | New | Unit tests for editor initialization and startGame integration |
-
-## Architecture Notes
-
-- The editor operates on the serialized `gameData` string. It deserializes it, modifies the state objects, and re-serializes it for saving. This avoids needing to run through the engine's action pipeline.
-- The frontend parses `gameData` using the same state key parsers the engine uses, modifies the in-memory state, and sends the serialized version back via the `setEditorData` endpoint.
-- No new database migrations are needed — `gameData` is already a nullable TEXT column on GameDao, and we're just populating it earlier (in LOBBY instead of only in ACTIVE).
-- The editor mode is orthogonal to the existing admin JSON editor, which continues to work on ACTIVE games for admins.
+| File | Change |
+|------|--------|
+| `editor_context.tsx` | Remove `EditorTool` enum and `currentTool`/`setTool`. Keep `selectedOwner`/`setOwner` only. |
+| `editor_panel.tsx` | Remove tool selector buttons. Add player color dropdown. Add Undo/Redo buttons. Keep owner selector, game settings, turn order, players, available cities, save. |
+| `editor_map.tsx` | Replace mode-switched `onClick` with context-sensitive handler. Add town click dialog (urbanize or place tile). Add tile-exists dialog (replace or erase). Merge connection click into a small owner-picker dialog. |
+| `editor_mode.tsx` | Add undo/redo history management. Add `onColorChange` callback that walks gameData. Pass `availableCities` + `onUrbanize` to `EditorMap`. |
+| `editor_test.ts` | Add urbanize-in-editor and player-color-change tests. |

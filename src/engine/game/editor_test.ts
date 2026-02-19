@@ -9,9 +9,7 @@ import { LandData, MutableSpaceData } from "../state/space";
 import { Direction, SimpleTileType } from "../state/tile";
 import { InterCityConnection } from "../state/inter_city_connection";
 import { GameEngine } from "./game";
-import { GameStarter, PlayerUser } from "./starter";
 import { CityGroup } from "../state/city_group";
-import { ROUND } from "./round";
 import {
   AVAILABLE_CITIES,
   BAG,
@@ -400,6 +398,221 @@ describe("Editor Mode", () => {
     it("defaults to round 1", () => {
       engine().startFromEditorData();
       // No error means it started at round 1 successfully.
+    });
+  });
+
+  describe("urbanize town via editor", () => {
+    const injector = InjectionHelper.install();
+
+    const cityCoords = Coordinates.from({ q: 0, r: 0 });
+    const townCoords = cityCoords.neighbor(Direction.TOP);
+
+    const grid = injector.initResettableState(
+      GRID,
+      new Map<Coordinates, MutableSpaceData>([
+        [cityCoords, city()],
+        [townCoords, town({ goods: [Good.RED] })],
+      ]),
+    );
+
+    const availCities = injector.initResettableState(AVAILABLE_CITIES, [
+      {
+        color: Good.BLUE,
+        onRoll: [{ group: CityGroup.WHITE, onRoll: 4, goods: [] }],
+        goods: [Good.YELLOW],
+      },
+      {
+        color: Good.PURPLE,
+        onRoll: [{ group: CityGroup.WHITE, onRoll: 5, goods: [] }],
+        goods: [Good.BLACK],
+      },
+    ]);
+
+    it("replaces a town with a city using an available city", () => {
+      // Simulate what editor_mode.onUrbanize does: replace the town land
+      // with a city and remove the used city from available.
+      const usedCity = availCities()[0];
+      const townData = grid().get(townCoords) as LandData;
+      const townGoods = townData.goods ?? [];
+
+      grid.update((g) => {
+        g.set(townCoords, {
+          type: SpaceType.CITY,
+          name: townData.townName ?? "Town",
+          color: usedCity.color,
+          goods: [...usedCity.goods, ...townGoods],
+          urbanized: true,
+          onRoll: usedCity.onRoll,
+        });
+      });
+
+      availCities.update((cities) => {
+        cities.splice(0, 1);
+      });
+
+      // Verify the town is now a city
+      const updatedSpace = grid().get(townCoords)!;
+      expect(updatedSpace.type).toEqual(SpaceType.CITY);
+      if (updatedSpace.type === SpaceType.CITY) {
+        expect(updatedSpace.urbanized).toEqual(true);
+        expect(updatedSpace.color).toEqual(Good.BLUE);
+        expect(updatedSpace.goods).toEqual([Good.YELLOW, Good.RED]);
+        expect(updatedSpace.name).toEqual("Foo City");
+      }
+
+      // Verify available cities reduced
+      expect(availCities().length).toEqual(1);
+      expect(availCities()[0].color).toEqual(Good.PURPLE);
+    });
+
+    it("preserves town goods when urbanizing", () => {
+      const usedCity = availCities()[0];
+      const townData = grid().get(townCoords) as LandData;
+      const townGoods = townData.goods ?? [];
+
+      grid.update((g) => {
+        g.set(townCoords, {
+          type: SpaceType.CITY,
+          name: townData.townName ?? "Town",
+          color: usedCity.color,
+          goods: [...usedCity.goods, ...townGoods],
+          urbanized: true,
+          onRoll: usedCity.onRoll,
+        });
+      });
+
+      const updatedSpace = grid().get(townCoords)!;
+      if (updatedSpace.type === SpaceType.CITY) {
+        // Town had [RED], city had [YELLOW] → combined
+        expect(updatedSpace.goods).toContain(Good.YELLOW);
+        expect(updatedSpace.goods).toContain(Good.RED);
+      }
+    });
+  });
+
+  describe("player color change via editor", () => {
+    const injector = InjectionHelper.install();
+
+    const cityCoords = Coordinates.from({ q: 0, r: 0 });
+    const landCoords = cityCoords.neighbor(Direction.TOP);
+    const secondCity = landCoords.neighbor(Direction.TOP);
+
+    const players = injector.initResettableState(TEST_ONLY_PLAYERS, [
+      {
+        playerId: 1,
+        color: PlayerColor.RED,
+        income: 5,
+        shares: 3,
+        money: 15,
+        locomotive: 2,
+      } as PlayerData,
+      {
+        playerId: 2,
+        color: PlayerColor.BLUE,
+        income: 3,
+        shares: 2,
+        money: 8,
+        locomotive: 1,
+      } as PlayerData,
+    ]);
+
+    const turnOrder = injector.initResettableState(TURN_ORDER, [
+      PlayerColor.RED,
+      PlayerColor.BLUE,
+    ]);
+
+    const grid = injector.initResettableState(
+      GRID,
+      new Map<Coordinates, MutableSpaceData>([
+        [cityCoords, city()],
+        [
+          landCoords,
+          plain({
+            tile: {
+              tileType: SimpleTileType.STRAIGHT,
+              orientation: Direction.TOP,
+              owners: [PlayerColor.RED],
+            },
+          }),
+        ],
+        [secondCity, city()],
+      ]),
+    );
+
+    const connections = injector.initResettableState(INTER_CITY_CONNECTIONS, [
+      {
+        id: "conn1",
+        connects: [cityCoords, secondCity],
+        cost: 3,
+        owner: { color: PlayerColor.BLUE },
+      } as InterCityConnection,
+    ]);
+
+    it("updates player color in players array", () => {
+      players.update((p) => {
+        p[0] = { ...p[0], color: PlayerColor.GREEN };
+      });
+
+      expect(players()[0].color).toEqual(PlayerColor.GREEN);
+      expect(players()[1].color).toEqual(PlayerColor.BLUE);
+    });
+
+    it("propagates color change to turn order", () => {
+      // Simulate editor_mode.onColorChange: replace old color in turnOrder
+      turnOrder.update((order) => {
+        for (let i = 0; i < order.length; i++) {
+          if (order[i] === PlayerColor.RED) {
+            order[i] = PlayerColor.GREEN;
+          }
+        }
+      });
+
+      expect(turnOrder()).toEqual([PlayerColor.GREEN, PlayerColor.BLUE]);
+    });
+
+    it("propagates color change to tile owners", () => {
+      grid.update((g) => {
+        const land = g.get(landCoords) as LandData;
+        if (land.tile) {
+          g.set(landCoords, {
+            ...land,
+            tile: {
+              ...land.tile,
+              owners: land.tile.owners.map((o) =>
+                o === PlayerColor.RED ? PlayerColor.GREEN : o,
+              ),
+            },
+          });
+        }
+      });
+
+      const landData = grid().get(landCoords) as LandData;
+      expect(landData.tile!.owners).toEqual([PlayerColor.GREEN]);
+    });
+
+    it("propagates color change to connection owners", () => {
+      connections.update((conns) => {
+        for (let i = 0; i < conns.length; i++) {
+          if (conns[i].owner?.color === PlayerColor.BLUE) {
+            conns[i] = {
+              ...conns[i],
+              owner: { color: PlayerColor.YELLOW },
+            };
+          }
+        }
+      });
+
+      expect(connections()[0].owner?.color).toEqual(PlayerColor.YELLOW);
+    });
+
+    it("does not change other players when changing one color", () => {
+      players.update((p) => {
+        p[0] = { ...p[0], color: PlayerColor.GREEN };
+      });
+
+      // Player 2 should be unchanged
+      expect(players()[1].color).toEqual(PlayerColor.BLUE);
+      expect(players()[1].money).toEqual(8);
     });
   });
 });

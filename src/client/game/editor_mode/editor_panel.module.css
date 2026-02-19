@@ -85,3 +85,15 @@
   flex-wrap: wrap;
   flex: 1;
 }
+
+.topActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.undoRedo {
+  display: flex;
+  gap: 4px;
+}

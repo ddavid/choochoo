@@ -1,16 +1,7 @@
-import { createContext, ReactNode, useCallback, useContext, useState } from "react";
+import { createContext, ReactNode, useContext, useState } from "react";
 import { PlayerColor } from "../../../engine/state/player";
 
-export enum EditorTool {
-  TILE = "tile",
-  GOOD = "good",
-  CONNECTION = "connection",
-  ERASER = "eraser",
-}
-
 interface EditorContextValue {
-  currentTool: EditorTool;
-  setTool(tool: EditorTool): void;
   selectedOwner: PlayerColor | undefined;
   setOwner(owner: PlayerColor | undefined): void;
 }
@@ -30,11 +21,10 @@ interface EditorContextProviderProps {
 }
 
 export function EditorContextProvider({ children }: EditorContextProviderProps) {
-  const [currentTool, setTool] = useState<EditorTool>(EditorTool.TILE);
   const [selectedOwner, setOwner] = useState<PlayerColor | undefined>(undefined);
 
   return (
-    <EditorContext.Provider value={{ currentTool, setTool, selectedOwner, setOwner }}>
+    <EditorContext.Provider value={{ selectedOwner, setOwner }}>
       {children}
     </EditorContext.Provider>
   );
