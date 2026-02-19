@@ -5,8 +5,8 @@ import { SerializedGameData } from "../../../engine/framework/state";
 import { MutableAvailableCity } from "../../../engine/state/available_city";
 import { SpaceType } from "../../../engine/state/location_type";
 import { MutablePlayerData, PlayerColor } from "../../../engine/state/player";
+import { LandData } from "../../../engine/state/space";
 import { Coordinates } from "../../../utils/coordinates";
-import { EditorContextProvider } from "./editor_context";
 import { EditorMap } from "./editor_map";
 import { EditorPanel } from "./editor_panel";
 
@@ -213,6 +213,50 @@ export function EditorMode({ game }: EditorModeProps) {
     [localGameData, pushState],
   );
 
+  // De-urbanize: revert an urbanized city back to a town, return city to available
+  const onDeUrbanize = useCallback(
+    (coordinates: Coordinates) => {
+      const state = JSON.parse(localGameData) as SerializedGameData;
+      const gd = { ...state.gameData } as Record<string, unknown>;
+
+      const gridData = gd["grid"] as Array<
+        [unknown, Record<string, unknown>]
+      >;
+      const cities = [
+        ...((gd["availableCities"] as MutableAvailableCity[]) ?? []),
+      ];
+
+      gd["grid"] = gridData.map(([coordData, spaceData]) => {
+        const c = coordData as { q: number; r: number };
+        if (Coordinates.from(c).equals(coordinates)) {
+          const cityData = spaceData as Record<string, unknown>;
+          // Return the city back to available cities
+          cities.push({
+            color: cityData["color"] as MutableAvailableCity["color"],
+            onRoll: cityData["onRoll"] as MutableAvailableCity["onRoll"],
+            goods: [], // Goods stay on the town
+          });
+          // Revert to a town (plain with townName)
+          const townData: LandData = {
+            type: SpaceType.PLAIN,
+            townName: (cityData["name"] as string) ?? undefined,
+            goods: cityData["goods"] as LandData["goods"],
+          };
+          if (cityData["mapSpecific"] != null) {
+            (townData as Record<string, unknown>)["mapSpecific"] =
+              cityData["mapSpecific"];
+          }
+          return [coordData, townData];
+        }
+        return [coordData, spaceData];
+      });
+      gd["availableCities"] = cities;
+
+      pushState(JSON.stringify({ ...state, gameData: gd }));
+    },
+    [localGameData, pushState],
+  );
+
   // Build a game object with local edits for the map to render
   const editedGame = useMemo(
     (): GameApi => ({ ...game, gameData: localGameData }),
@@ -220,16 +264,17 @@ export function EditorMode({ game }: EditorModeProps) {
   );
 
   return (
-    <EditorContextProvider>
+    <>
       <Header as="h2">Editor Mode</Header>
       <Segment>
         <p>
-          Click hexes and connections to edit. Choose an owner for placed items.
+          Click hexes and connections to edit.
           Click <b>Save Changes</b> to persist, then <b>Start</b> the game when
           ready.
         </p>
       </Segment>
       <EditorPanel
+        gameKey={game.gameKey}
         gameData={localGameData}
         players={players}
         turnOrder={turnOrder}
@@ -247,10 +292,12 @@ export function EditorMode({ game }: EditorModeProps) {
       />
       <EditorMap
         game={editedGame}
+        players={players}
         availableCities={availableCities}
         onGameDataChange={pushState}
         onUrbanize={onUrbanize}
+        onDeUrbanize={onDeUrbanize}
       />
-    </EditorContextProvider>
+    </>
   );
 }

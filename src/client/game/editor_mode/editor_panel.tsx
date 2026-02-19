@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   Button,
   Dropdown,
@@ -7,21 +7,28 @@ import {
   Label,
   Segment,
 } from "semantic-ui-react";
+import { City } from "../../../engine/map/city";
+import { Grid } from "../../../engine/map/grid";
 import { MutableAvailableCity } from "../../../engine/state/available_city";
 import { Good, goodToString } from "../../../engine/state/good";
+import { SpaceType } from "../../../engine/state/location_type";
 import {
   MutablePlayerData,
   PlayerColor,
   eligiblePlayerColors,
   playerColorToString,
 } from "../../../engine/state/player";
+import { GameKey } from "../../../api/game_key";
+import { MapRegistry } from "../../../maps/registry";
+import { Coordinates } from "../../../utils/coordinates";
 import { Username } from "../../components/username";
+import { HexGrid } from "../../grid/hex_grid";
 import { useSetEditorData } from "../../services/game";
-import { useEditorContext } from "./editor_context";
 import { PlayerColorIndicator } from "../player_stats";
 import * as styles from "./editor_panel.module.css";
 
 interface EditorPanelProps {
+  gameKey: GameKey;
   gameData: string;
   players: MutablePlayerData[];
   turnOrder: PlayerColor[];
@@ -39,6 +46,7 @@ interface EditorPanelProps {
 }
 
 export function EditorPanel({
+  gameKey,
   gameData,
   players,
   turnOrder,
@@ -54,17 +62,7 @@ export function EditorPanel({
   onUndo,
   onRedo,
 }: EditorPanelProps) {
-  const { selectedOwner, setOwner } = useEditorContext();
   const { setEditorData, isPending } = useSetEditorData();
-
-  const ownerOptions = [
-    { key: "none", text: "Unowned", value: -1 },
-    ...players.map((p) => ({
-      key: p.color,
-      text: playerColorToString(p.color),
-      value: p.color,
-    })),
-  ];
 
   const save = useCallback(() => {
     setEditorData(gameData);
@@ -74,19 +72,6 @@ export function EditorPanel({
     <div className={styles.editorPanel}>
       <Segment>
         <div className={styles.topActions}>
-          <div className={styles.ownerSelector}>
-            <Label>Owner:</Label>
-            <Dropdown
-              selection
-              compact
-              options={ownerOptions}
-              value={selectedOwner ?? -1}
-              onChange={(_, data) => {
-                const val = data.value as number;
-                setOwner(val === -1 ? undefined : (val as PlayerColor));
-              }}
-            />
-          </div>
           <div className={styles.undoRedo}>
             <Button
               icon="undo"
@@ -105,6 +90,14 @@ export function EditorPanel({
               title="Redo"
             />
           </div>
+          <Button
+            primary
+            onClick={save}
+            disabled={isPending}
+            loading={isPending}
+          >
+            Save Changes
+          </Button>
         </div>
       </Segment>
 
@@ -149,20 +142,11 @@ export function EditorPanel({
           Available Cities ({availableCities.length})
         </Header>
         <AvailableCitiesEditor
+          gameKey={gameKey}
           cities={availableCities}
           onUpdate={onAvailableCitiesUpdate}
         />
       </Segment>
-
-      <Button
-        primary
-        fluid
-        onClick={save}
-        disabled={isPending}
-        loading={isPending}
-      >
-        Save Changes
-      </Button>
     </div>
   );
 }
@@ -233,11 +217,13 @@ function TurnOrderEditor({
 }
 
 interface AvailableCitiesEditorProps {
+  gameKey: GameKey;
   cities: MutableAvailableCity[];
   onUpdate(cities: MutableAvailableCity[]): void;
 }
 
 function AvailableCitiesEditor({
+  gameKey,
   cities,
   onUpdate,
 }: AvailableCitiesEditorProps) {
@@ -256,58 +242,89 @@ function AvailableCitiesEditor({
     value: g,
   }));
 
-  const cityColorLabel = (color: MutableAvailableCity["color"]): string => {
-    if (Array.isArray(color)) {
-      return color.map(goodToString).join("/");
-    }
-    return goodToString(color);
-  };
+  return (
+    <div className={styles.availableCityList}>
+      {cities.map((city, index) => (
+        <AvailableCityHex
+          key={index}
+          gameKey={gameKey}
+          city={city}
+          goodOptions={goodOptions}
+          onRemoveGood={(gi) => {
+            const newCities = [...cities];
+            const newGoods = [...city.goods];
+            newGoods.splice(gi, 1);
+            newCities[index] = { ...city, goods: newGoods };
+            onUpdate(newCities);
+          }}
+          onAddGood={(good) => {
+            const newCities = [...cities];
+            newCities[index] = {
+              ...city,
+              goods: [...city.goods, good],
+            };
+            onUpdate(newCities);
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface AvailableCityHexProps {
+  gameKey: GameKey;
+  city: MutableAvailableCity;
+  goodOptions: Array<{ key: Good; text: string; value: Good }>;
+  onRemoveGood(goodIndex: number): void;
+  onAddGood(good: Good): void;
+}
+
+function AvailableCityHex({
+  gameKey,
+  city,
+  goodOptions,
+  onRemoveGood,
+  onAddGood,
+}: AvailableCityHexProps) {
+  const mapSettings = MapRegistry.singleton.get(gameKey);
+
+  const cityGrid = useMemo(() => {
+    const newCity = new City(Coordinates.from({ q: 0, r: 0 }), {
+      type: SpaceType.CITY,
+      name: "",
+      color: city.color,
+      goods: city.goods,
+      urbanized: true,
+      onRoll: city.onRoll,
+    });
+    return Grid.fromSpaces(mapSettings, [newCity], []);
+  }, [city, mapSettings]);
 
   return (
-    <div>
-      {cities.map((city, index) => (
-        <div key={index} className={styles.availableCity}>
-          <div className={styles.availableCityHeader}>
-            <Label size="small">{cityColorLabel(city.color)}</Label>
-            <span className={styles.availableCityGoods}>
-              {city.goods.length === 0 && <span>No goods</span>}
-              {city.goods.map((good, gi) => (
-                <Label
-                  key={gi}
-                  size="mini"
-                  style={{ cursor: "pointer" }}
-                  onClick={() => {
-                    const newCities = [...cities];
-                    const newGoods = [...city.goods];
-                    newGoods.splice(gi, 1);
-                    newCities[index] = { ...city, goods: newGoods };
-                    onUpdate(newCities);
-                  }}
-                >
-                  {goodToString(good)} x
-                </Label>
-              ))}
-            </span>
-            <Dropdown
-              icon="plus"
-              className="icon mini"
-              button
-              compact
-              options={goodOptions}
-              onChange={(_, data) => {
-                const newCities = [...cities];
-                newCities[index] = {
-                  ...city,
-                  goods: [...city.goods, data.value as Good],
-                };
-                onUpdate(newCities);
-              }}
-              selectOnBlur={false}
-              value={undefined}
-            />
-          </div>
-        </div>
-      ))}
+    <div className={styles.availableCityItem}>
+      <HexGrid grid={cityGrid} />
+      <div className={styles.availableCityActions}>
+        {city.goods.map((good, gi) => (
+          <Label
+            key={gi}
+            size="mini"
+            style={{ cursor: "pointer" }}
+            onClick={() => onRemoveGood(gi)}
+          >
+            {goodToString(good)} x
+          </Label>
+        ))}
+        <Dropdown
+          icon="plus"
+          className="icon mini"
+          button
+          compact
+          options={goodOptions}
+          onChange={(_, data) => onAddGood(data.value as Good)}
+          selectOnBlur={false}
+          value={undefined}
+        />
+      </div>
     </div>
   );
 }
@@ -335,8 +352,10 @@ function PlayerEditor({ player, usedColors, onChange, onColorChange }: PlayerEdi
   return (
     <div className={styles.playerEditor}>
       <div className={styles.playerHeader}>
+        <PlayerColorIndicator playerColor={player.color} currentTurn={false} />
         <Dropdown
-          inline
+          selection
+          compact
           options={colorOptions}
           value={player.color}
           onChange={(_, data) => onColorChange(data.value as PlayerColor)}

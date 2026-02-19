@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   Button,
-  Checkbox,
+  Dropdown,
   Label,
   Modal,
   ModalActions,
@@ -17,6 +17,7 @@ import { Direction, TileData, TileType } from "../../../engine/state/tile";
 import { SerializedGameData } from "../../../engine/framework/state";
 import { MutableAvailableCity } from "../../../engine/state/available_city";
 import {
+  MutablePlayerData,
   PlayerColor,
   playerColorToString,
 } from "../../../engine/state/player";
@@ -29,15 +30,16 @@ import {
   useGrid,
   useViewSettings,
 } from "../../utils/injection_context";
-import { useEditorContext } from "./editor_context";
 import { EditorTileDialog } from "./editor_tile_dialog";
 import { CityData } from "../../../engine/state/space";
 
 interface EditorMapProps {
   game: GameApi;
+  players: MutablePlayerData[];
   availableCities: MutableAvailableCity[];
   onGameDataChange(newGameData: string): void;
   onUrbanize(coordinates: Coordinates, cityIndex: number): void;
+  onDeUrbanize(coordinates: Coordinates): void;
 }
 
 export function EditorMap(props: EditorMapProps) {
@@ -52,14 +54,20 @@ export function EditorMap(props: EditorMapProps) {
 
 function InternalEditorMap({
   game,
+  players,
   availableCities,
   onGameDataChange,
   onUrbanize,
+  onDeUrbanize,
 }: EditorMapProps) {
-  const { selectedOwner } = useEditorContext();
   const grid = useGrid();
   const mapSettings = useViewSettings();
   const gameKey = useGameKey();
+
+  // Owner state for tile placement
+  const [tileOwner, setTileOwner] = useState<PlayerColor | undefined>(
+    undefined,
+  );
 
   // Tile dialog state
   const [tileDialogCoords, setTileDialogCoords] = useState<
@@ -85,7 +93,7 @@ function InternalEditorMap({
     undefined,
   );
 
-  // Existing-tile dialog state (replace or erase)
+  // Existing-tile dialog state (replace, erase, change owner)
   const [tileActionCoords, setTileActionCoords] = useState<
     Coordinates | undefined
   >(undefined);
@@ -96,6 +104,18 @@ function InternalEditorMap({
   // Connection dialog state
   const [connectionId, setConnectionId] = useState<string | undefined>(
     undefined,
+  );
+
+  const ownerOptions = useMemo(
+    () => [
+      { key: "none", text: "Unowned", value: -1 },
+      ...players.map((p) => ({
+        key: p.color,
+        text: playerColorToString(p.color),
+        value: p.color,
+      })),
+    ],
+    [players],
   );
 
   // Helper to parse, modify, and re-serialize game data
@@ -192,13 +212,13 @@ function InternalEditorMap({
           tileType,
           orientation,
           owners: [],
-        }).map(() => selectedOwner),
+        }).map(() => tileOwner),
       };
       updateGridSpace(coords, (s) => ({ ...s, tile }));
       setTileDialogCoords(undefined);
       setTileDialogSpace(undefined);
     },
-    [tileDialogCoords, selectedOwner, updateGridSpace],
+    [tileDialogCoords, tileOwner, updateGridSpace],
   );
 
   const clickTargets = useMemo(
@@ -229,7 +249,11 @@ function InternalEditorMap({
         coordinates={tileDialogCoords}
         space={tileDialogSpace}
         settings={mapSettings}
-        owner={selectedOwner}
+        owner={tileOwner}
+        ownerOptions={ownerOptions}
+        onOwnerChange={(val) =>
+          setTileOwner(val === -1 ? undefined : (val as PlayerColor))
+        }
         onSelect={onTileSelect}
         onCancel={() => {
           setTileDialogCoords(undefined);
@@ -259,15 +283,13 @@ function InternalEditorMap({
             return s;
           });
         }}
-        onToggleUrbanized={(urbanized) => {
-          if (goodDialogCoords == null) return;
-          updateGridSpace(goodDialogCoords, (s) => ({
-            ...s,
-            urbanized: urbanized || undefined,
-          }));
-          if (goodDialogCity) {
-            setGoodDialogCity({ ...goodDialogCity, urbanized } as CityData);
+        onErase={() => {
+          if (goodDialogCoords == null || goodDialogCity == null) return;
+          if (goodDialogCity.urbanized) {
+            onDeUrbanize(goodDialogCoords);
           }
+          setGoodDialogCoords(undefined);
+          setGoodDialogCity(undefined);
         }}
         onClose={() => {
           setGoodDialogCoords(undefined);
@@ -297,9 +319,27 @@ function InternalEditorMap({
       />
       <TileActionDialog
         coordinates={tileActionCoords}
+        space={tileActionSpace}
+        ownerOptions={ownerOptions}
         onReplace={() => {
           setTileDialogCoords(tileActionCoords);
           setTileDialogSpace(tileActionSpace);
+          setTileActionCoords(undefined);
+          setTileActionSpace(undefined);
+        }}
+        onChangeOwner={(newOwner) => {
+          if (tileActionCoords == null) return;
+          updateGridSpace(tileActionCoords, (s) => {
+            const tile = s["tile"] as TileData | undefined;
+            if (tile == null) return s;
+            return {
+              ...s,
+              tile: {
+                ...tile,
+                owners: tile.owners.map(() => newOwner),
+              },
+            };
+          });
           setTileActionCoords(undefined);
           setTileActionSpace(undefined);
         }}
@@ -320,7 +360,7 @@ function InternalEditorMap({
       />
       <ConnectionDialog
         connectionId={connectionId}
-        currentOwner={selectedOwner}
+        ownerOptions={ownerOptions}
         onSetOwner={(owner) => {
           if (connectionId == null) return;
           const id = connectionId;
@@ -341,12 +381,18 @@ function InternalEditorMap({
 
 // --- Dialogs ---
 
+interface OwnerOption {
+  key: string | number;
+  text: string;
+  value: number;
+}
+
 interface EditorGoodDialogProps {
   coordinates: Coordinates | undefined;
   cityData: CityData | undefined;
   onAdd(good: Good): void;
   onRemove(good: Good): void;
-  onToggleUrbanized(urbanized: boolean): void;
+  onErase(): void;
   onClose(): void;
 }
 
@@ -355,7 +401,7 @@ function EditorGoodDialog({
   cityData,
   onAdd,
   onRemove,
-  onToggleUrbanized,
+  onErase,
   onClose,
 }: EditorGoodDialogProps) {
   const allGoods = [
@@ -373,13 +419,6 @@ function EditorGoodDialog({
     <Modal closeIcon open={isOpen} onClose={onClose} size="small">
       <ModalHeader>Edit {cityData?.name ?? "city"}</ModalHeader>
       <ModalContent>
-        <div style={{ marginBottom: "12px" }}>
-          <Checkbox
-            label="Urbanized"
-            checked={cityData?.urbanized ?? false}
-            onChange={(_, data) => onToggleUrbanized(!!data.checked)}
-          />
-        </div>
         <div>
           <Label>Current goods:</Label>
           <div style={{ margin: "8px 0" }}>
@@ -414,6 +453,13 @@ function EditorGoodDialog({
           </div>
         </div>
       </ModalContent>
+      {cityData?.urbanized && (
+        <ModalActions>
+          <Button negative onClick={onErase}>
+            Erase urbanization
+          </Button>
+        </ModalActions>
+      )}
     </Modal>
   );
 }
@@ -484,20 +530,57 @@ function TownDialog({
 
 interface TileActionDialogProps {
   coordinates: Coordinates | undefined;
+  space: Space | undefined;
+  ownerOptions: OwnerOption[];
   onReplace(): void;
+  onChangeOwner(owner: PlayerColor | undefined): void;
   onErase(): void;
   onClose(): void;
 }
 
 function TileActionDialog({
   coordinates,
+  space,
+  ownerOptions,
   onReplace,
+  onChangeOwner,
   onErase,
   onClose,
 }: TileActionDialogProps) {
+  const currentOwner = useMemo(() => {
+    if (space instanceof Land && space.hasTile()) {
+      const tile = space.getTileData();
+      // Return the first owner (all tracks typically have the same owner)
+      return tile?.owners[0] ?? undefined;
+    }
+    return undefined;
+  }, [space]);
+
   return (
-    <Modal closeIcon open={coordinates != null} onClose={onClose} size="mini">
+    <Modal closeIcon open={coordinates != null} onClose={onClose} size="small">
       <ModalHeader>Tile</ModalHeader>
+      <ModalContent>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            marginBottom: "8px",
+          }}
+        >
+          <Label>Owner:</Label>
+          <Dropdown
+            selection
+            compact
+            options={ownerOptions}
+            value={currentOwner ?? -1}
+            onChange={(_, data) => {
+              const val = data.value as number;
+              onChangeOwner(val === -1 ? undefined : (val as PlayerColor));
+            }}
+          />
+        </div>
+      </ModalContent>
       <ModalActions>
         <Button onClick={onReplace}>Replace</Button>
         <Button negative onClick={onErase}>
@@ -510,36 +593,50 @@ function TileActionDialog({
 
 interface ConnectionDialogProps {
   connectionId: string | undefined;
-  currentOwner: PlayerColor | undefined;
+  ownerOptions: OwnerOption[];
   onSetOwner(owner: PlayerColor | undefined): void;
   onClose(): void;
 }
 
 function ConnectionDialog({
   connectionId,
-  currentOwner,
+  ownerOptions,
   onSetOwner,
   onClose,
 }: ConnectionDialogProps) {
+  const [selectedOwner, setSelectedOwner] = useState<number>(-1);
+
   return (
     <Modal
       closeIcon
       open={connectionId != null}
       onClose={onClose}
-      size="mini"
+      size="small"
     >
       <ModalHeader>Connection</ModalHeader>
       <ModalContent>
-        <p>
-          Set owner to current selection (
-          {currentOwner != null
-            ? playerColorToString(currentOwner)
-            : "unowned"}
-          )?
-        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Label>Owner:</Label>
+          <Dropdown
+            selection
+            compact
+            options={ownerOptions}
+            value={selectedOwner}
+            onChange={(_, data) => setSelectedOwner(data.value as number)}
+          />
+        </div>
       </ModalContent>
       <ModalActions>
-        <Button primary onClick={() => onSetOwner(currentOwner)}>
+        <Button
+          primary
+          onClick={() => {
+            onSetOwner(
+              selectedOwner === -1
+                ? undefined
+                : (selectedOwner as PlayerColor),
+            );
+          }}
+        >
           Set owner
         </Button>
         <Button onClick={() => onSetOwner(undefined)}>Clear owner</Button>

@@ -1,17 +1,18 @@
-import { useCallback, useMemo, useReducer } from "react";
+import { useMemo, useReducer } from "react";
 import {
   Button,
+  Dropdown,
+  Label,
   Modal,
   ModalContent,
   ModalHeader,
 } from "semantic-ui-react";
 import { rotateDirectionClockwise } from "../../../engine/map/direction";
-import { Grid, Space } from "../../../engine/map/grid";
-import { Land, calculateTrackInfo, trackEquals } from "../../../engine/map/location";
+import { Space } from "../../../engine/map/grid";
+import { calculateTrackInfo, trackEquals } from "../../../engine/map/location";
 import { isTownTile } from "../../../engine/map/tile";
 import { SpaceType } from "../../../engine/state/location_type";
 import {
-  allDirections,
   allTileTypes,
   Direction,
   TileData,
@@ -20,15 +21,21 @@ import {
 import { PlayerColor } from "../../../engine/state/player";
 import { MapViewSettings } from "../../../maps/view_settings";
 import { Coordinates } from "../../../utils/coordinates";
-import { ClickTarget } from "../../grid/click_target";
-import { HexGrid } from "../../grid/hex_grid";
 import { ModifiedSpace } from "../../grid/building_dialog";
+
+interface OwnerOption {
+  key: string | number;
+  text: string;
+  value: number;
+}
 
 interface EditorTileDialogProps {
   coordinates: Coordinates | undefined;
   space: Space | undefined;
   settings: MapViewSettings;
   owner: PlayerColor | undefined;
+  ownerOptions: OwnerOption[];
+  onOwnerChange(value: number): void;
   onSelect(tileType: TileType, orientation: Direction): void;
   onCancel(): void;
 }
@@ -44,6 +51,8 @@ export function EditorTileDialog({
   space,
   settings,
   owner,
+  ownerOptions,
+  onOwnerChange,
   onSelect,
   onCancel,
 }: EditorTileDialogProps) {
@@ -89,18 +98,30 @@ export function EditorTileDialog({
 
   const isOpen = coordinates != null && space != null && options.length > 0;
 
-  const clickTargets = useMemo(
-    () => new Set([ClickTarget.TOWN, ClickTarget.LAND]),
-    [],
-  );
-
   return (
     <Modal closeIcon open={isOpen} onClose={onCancel}>
-      <ModalHeader>Select a tile to place (Editor)</ModalHeader>
+      <ModalHeader>Select a tile to place</ModalHeader>
       <ModalContent>
-        <Button primary onClick={rotate}>
-          Rotate
-        </Button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            marginBottom: "8px",
+          }}
+        >
+          <Label>Owner:</Label>
+          <Dropdown
+            selection
+            compact
+            options={ownerOptions}
+            value={owner ?? -1}
+            onChange={(_, data) => onOwnerChange(data.value as number)}
+          />
+          <Button primary onClick={rotate}>
+            Rotate
+          </Button>
+        </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
           {options.map((opt, index) => (
             <div
