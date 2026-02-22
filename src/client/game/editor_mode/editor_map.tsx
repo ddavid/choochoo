@@ -276,24 +276,16 @@ function InternalEditorMap({
             goods: [...goodDialogCity.goods, good],
           });
         }}
-        onRemove={(good) => {
+        onRemoveGood={(goodIndex) => {
           if (goodDialogCoords == null || goodDialogCity == null) return;
           updateGridSpace(goodDialogCoords, (s) => {
-            const goods = (s["goods"] as Good[]) ?? [];
-            const idx = goods.lastIndexOf(good);
-            if (idx >= 0) {
-              const newGoods = [...goods];
-              newGoods.splice(idx, 1);
-              return { ...s, goods: newGoods };
-            }
-            return s;
+            const goods = [...((s["goods"] as Good[]) ?? [])];
+            goods.splice(goodIndex, 1);
+            return { ...s, goods };
           });
-          const idx = goodDialogCity.goods.lastIndexOf(good);
-          if (idx >= 0) {
-            const newGoods = [...goodDialogCity.goods];
-            newGoods.splice(idx, 1);
-            setGoodDialogCity({ ...goodDialogCity, goods: newGoods });
-          }
+          const newGoods = [...goodDialogCity.goods];
+          newGoods.splice(goodIndex, 1);
+          setGoodDialogCity({ ...goodDialogCity, goods: newGoods });
         }}
         onErase={() => {
           if (goodDialogCoords == null || goodDialogCity == null) return;
@@ -403,66 +395,118 @@ interface EditorGoodDialogProps {
   coordinates: Coordinates | undefined;
   cityData: CityData | undefined;
   onAdd(good: Good): void;
-  onRemove(good: Good): void;
+  onRemoveGood(goodIndex: number): void;
   onErase(): void;
   onClose(): void;
 }
+
+const goodOptions = [
+  Good.RED,
+  Good.BLUE,
+  Good.PURPLE,
+  Good.YELLOW,
+  Good.BLACK,
+  Good.WHITE,
+].map((g) => ({
+  key: g,
+  text: goodToString(g),
+  value: g,
+}));
 
 function EditorGoodDialog({
   coordinates,
   cityData,
   onAdd,
-  onRemove,
+  onRemoveGood,
   onErase,
   onClose,
 }: EditorGoodDialogProps) {
-  const allGoods = [
-    Good.RED,
-    Good.BLUE,
-    Good.PURPLE,
-    Good.YELLOW,
-    Good.BLACK,
-    Good.WHITE,
-  ];
+  const [removing, setRemoving] = useState(false);
+  const gameKey = useGameKey();
+  const mapSettings = MapRegistry.singleton.get(gameKey);
 
   const isOpen = coordinates != null && cityData != null;
 
+  const cityGrid = useMemo(() => {
+    if (cityData == null) return undefined;
+    const newCity = new City(Coordinates.from({ q: 0, r: 0 }), {
+      ...cityData,
+    });
+    return Grid.fromSpaces(mapSettings, [newCity], []);
+  }, [cityData, mapSettings]);
+
   return (
-    <Modal closeIcon open={isOpen} onClose={onClose} size="small">
+    <Modal
+      closeIcon
+      open={isOpen}
+      onClose={() => {
+        setRemoving(false);
+        onClose();
+      }}
+      size="tiny"
+    >
       <ModalHeader>Edit {cityData?.name ?? "city"}</ModalHeader>
       <ModalContent>
-        <div>
-          <Label>Current goods:</Label>
-          <div style={{ margin: "8px 0" }}>
-            {cityData?.goods.map((good, idx) => (
-              <Label
-                key={idx}
-                size="small"
-                style={{ cursor: "pointer" }}
-                onClick={() => onRemove(good)}
-              >
-                {goodToString(good)} x
-              </Label>
-            ))}
-            {(cityData?.goods.length ?? 0) === 0 && <span>None</span>}
-          </div>
-        </div>
-        <div style={{ marginTop: "12px" }}>
-          <Label>Add good:</Label>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          {cityGrid && <HexGrid grid={cityGrid} />}
           <div
             style={{
               display: "flex",
+              alignItems: "center",
               gap: "4px",
-              marginTop: "4px",
-              flexWrap: "wrap",
             }}
           >
-            {allGoods.map((good) => (
-              <Button key={good} size="small" onClick={() => onAdd(good)}>
-                {goodToString(good)}
-              </Button>
-            ))}
+            <Button
+              icon="minus"
+              size="mini"
+              compact
+              color={removing ? "red" : undefined}
+              onClick={() => setRemoving(!removing)}
+              disabled={(cityData?.goods.length ?? 0) === 0}
+            />
+            <Dropdown
+              trigger={<Button icon="plus" size="mini" compact />}
+              options={goodOptions}
+              onChange={(_, data) => onAdd(data.value as Good)}
+              selectOnBlur={false}
+              icon={null}
+              pointing="top left"
+            />
           </div>
+          {removing && (cityData?.goods.length ?? 0) > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: "2px",
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              {cityData?.goods.map((good, gi) => (
+                <Label
+                  key={gi}
+                  size="mini"
+                  color="red"
+                  basic
+                  style={{ cursor: "pointer" }}
+                  onClick={() => {
+                    onRemoveGood(gi);
+                    if ((cityData?.goods.length ?? 0) <= 1)
+                      setRemoving(false);
+                  }}
+                >
+                  {goodToString(good)}
+                </Label>
+              ))}
+            </div>
+          )}
         </div>
       </ModalContent>
       {cityData?.urbanized && (
