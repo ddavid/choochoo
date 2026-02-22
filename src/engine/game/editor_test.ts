@@ -490,6 +490,80 @@ describe("Editor Mode", () => {
     });
   });
 
+  describe("de-urbanize via editor", () => {
+    const injector = InjectionHelper.install();
+
+    const cityCoords = Coordinates.from({ q: 0, r: 0 });
+    const townCoords = cityCoords.neighbor(Direction.TOP);
+
+    const grid = injector.initResettableState(
+      GRID,
+      new Map<Coordinates, MutableSpaceData>([
+        [cityCoords, city()],
+        [
+          townCoords,
+          {
+            type: SpaceType.CITY,
+            name: "Urbanized Town",
+            color: Good.BLUE,
+            goods: [Good.YELLOW, Good.RED],
+            urbanized: true,
+            onRoll: [{ group: CityGroup.WHITE, onRoll: 4, goods: [] }],
+          },
+        ],
+      ]),
+    );
+
+    const availCities = injector.initResettableState(AVAILABLE_CITIES, [
+      {
+        color: Good.PURPLE,
+        onRoll: [{ group: CityGroup.WHITE, onRoll: 5, goods: [] }],
+        goods: [Good.BLACK],
+      },
+    ]);
+
+    it("reverts an urbanized city back to a town", () => {
+      // Simulate what editor_mode.onDeUrbanize does
+      const urbanData = grid().get(townCoords)!;
+      expect(urbanData.type).toEqual(SpaceType.CITY);
+
+      // Return city data to available cities
+      if (urbanData.type === SpaceType.CITY) {
+        availCities.update((cities) => {
+          cities.push({
+            color: urbanData.color,
+            onRoll: urbanData.onRoll,
+            goods: [], // goods stay on the town
+          });
+        });
+      }
+
+      // Revert to town
+      grid.update((g) => {
+        const spaceData = g.get(townCoords)!;
+        if (spaceData.type === SpaceType.CITY) {
+          g.set(townCoords, {
+            type: SpaceType.PLAIN,
+            townName: spaceData.name,
+            goods: spaceData.goods,
+          });
+        }
+      });
+
+      // Verify reverted to town
+      const updatedSpace = grid().get(townCoords)!;
+      expect(updatedSpace.type).not.toEqual(SpaceType.CITY);
+      const townData = updatedSpace as LandData;
+      expect(townData.townName).toEqual("Urbanized Town");
+      expect(townData.goods).toEqual([Good.YELLOW, Good.RED]);
+
+      // Verify available cities grew
+      expect(availCities().length).toEqual(2);
+      expect(availCities()[1].color).toEqual(Good.BLUE);
+      expect(availCities()[1].goods).toEqual([]);
+    });
+  });
+
   describe("player color change via editor", () => {
     const injector = InjectionHelper.install();
 

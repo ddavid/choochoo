@@ -9,10 +9,11 @@ import {
   ModalHeader,
 } from "semantic-ui-react";
 import { GameApi } from "../../../api/game";
-import { Space } from "../../../engine/map/grid";
+import { Space, Grid } from "../../../engine/map/grid";
 import { City } from "../../../engine/map/city";
 import { Land, calculateTrackInfo } from "../../../engine/map/location";
 import { Good, goodToString } from "../../../engine/state/good";
+import { SpaceType } from "../../../engine/state/location_type";
 import { Direction, TileData, TileType } from "../../../engine/state/tile";
 import { SerializedGameData } from "../../../engine/framework/state";
 import { MutableAvailableCity } from "../../../engine/state/available_city";
@@ -21,6 +22,7 @@ import {
   PlayerColor,
   playerColorToString,
 } from "../../../engine/state/player";
+import { MapRegistry } from "../../../maps/registry";
 import { Coordinates } from "../../../utils/coordinates";
 import { ClickTarget } from "../../grid/click_target";
 import { HexGrid } from "../../grid/hex_grid";
@@ -483,13 +485,8 @@ function TownDialog({
 }: TownDialogProps) {
   const isOpen = coordinates != null && space != null;
   const townName = space instanceof Land ? space.name() : undefined;
-
-  const cityColorLabel = (color: MutableAvailableCity["color"]): string => {
-    if (Array.isArray(color)) {
-      return color.map(goodToString).join("/");
-    }
-    return goodToString(color);
-  };
+  const gameKey = useGameKey();
+  const mapSettings = MapRegistry.singleton.get(gameKey);
 
   return (
     <Modal closeIcon open={isOpen} onClose={onClose} size="small">
@@ -506,20 +503,36 @@ function TownDialog({
             <div
               style={{
                 display: "flex",
-                flexDirection: "column",
-                gap: "4px",
+                flexWrap: "wrap",
+                gap: "8px",
                 marginTop: "8px",
               }}
             >
-              {availableCities.map((city, index) => (
-                <Button
-                  key={index}
-                  size="small"
-                  onClick={() => onUrbanize(index)}
-                >
-                  {cityColorLabel(city.color)} ({city.goods.length} goods)
-                </Button>
-              ))}
+              {availableCities.map((city, index) => {
+                const cityGrid = Grid.fromSpaces(
+                  mapSettings,
+                  [
+                    new City(Coordinates.from({ q: 0, r: 0 }), {
+                      type: SpaceType.CITY,
+                      name: "",
+                      color: city.color,
+                      goods: city.goods,
+                      urbanized: true,
+                      onRoll: city.onRoll,
+                    }),
+                  ],
+                  [],
+                );
+                return (
+                  <div
+                    key={index}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => onUrbanize(index)}
+                  >
+                    <HexGrid grid={cityGrid} />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

@@ -78,14 +78,9 @@
   justify-content: center;
 }
 
-.topActions {
+.removableGoods {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.undoRedo {
-  display: flex;
-  gap: 4px;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
 }

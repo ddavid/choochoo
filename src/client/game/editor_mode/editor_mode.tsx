@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Header, Segment } from "semantic-ui-react";
+import { Button, Header, Segment } from "semantic-ui-react";
 import { GameApi } from "../../../api/game";
+import { useSetEditorData } from "../../services/game";
 import { SerializedGameData } from "../../../engine/framework/state";
 import { MutableAvailableCity } from "../../../engine/state/available_city";
 import { SpaceType } from "../../../engine/state/location_type";
@@ -275,18 +276,20 @@ export function EditorMode({ game }: EditorModeProps) {
       </Segment>
       <EditorPanel
         gameKey={game.gameKey}
-        gameData={localGameData}
         players={players}
         turnOrder={turnOrder}
         roundNumber={roundNumber}
         availableCities={availableCities}
-        canUndo={canUndo}
-        canRedo={canRedo}
         onPlayerUpdate={onPlayerUpdate}
         onTurnOrderUpdate={onTurnOrderUpdate}
         onRoundUpdate={onRoundUpdate}
         onAvailableCitiesUpdate={onAvailableCitiesUpdate}
         onColorChange={onColorChange}
+      />
+      <EditorToolbar
+        gameData={localGameData}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onUndo={onUndo}
         onRedo={onRedo}
       />
@@ -299,5 +302,60 @@ export function EditorMode({ game }: EditorModeProps) {
         onDeUrbanize={onDeUrbanize}
       />
     </>
+  );
+}
+
+interface EditorToolbarProps {
+  gameData: string;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo(): void;
+  onRedo(): void;
+}
+
+function EditorToolbar({
+  gameData,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+}: EditorToolbarProps) {
+  const { setEditorData, isPending } = useSetEditorData();
+
+  const save = useCallback(() => {
+    setEditorData(gameData);
+  }, [gameData, setEditorData]);
+
+  return (
+    <Segment>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "4px" }}>
+          <Button
+            icon="undo"
+            size="small"
+            compact
+            disabled={!canUndo}
+            onClick={onUndo}
+            title="Undo"
+          />
+          <Button
+            icon="redo"
+            size="small"
+            compact
+            disabled={!canRedo}
+            onClick={onRedo}
+            title="Redo"
+          />
+        </div>
+        <Button
+          primary
+          onClick={save}
+          disabled={isPending}
+          loading={isPending}
+        >
+          Save Changes
+        </Button>
+      </div>
+    </Segment>
   );
 }

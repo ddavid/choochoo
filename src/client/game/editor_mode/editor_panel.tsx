@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Button,
   Dropdown,
@@ -23,84 +23,36 @@ import { MapRegistry } from "../../../maps/registry";
 import { Coordinates } from "../../../utils/coordinates";
 import { Username } from "../../components/username";
 import { HexGrid } from "../../grid/hex_grid";
-import { useSetEditorData } from "../../services/game";
 import { PlayerColorIndicator } from "../player_stats";
 import * as styles from "./editor_panel.module.css";
 
 interface EditorPanelProps {
   gameKey: GameKey;
-  gameData: string;
   players: MutablePlayerData[];
   turnOrder: PlayerColor[];
   roundNumber: number;
   availableCities: MutableAvailableCity[];
-  canUndo: boolean;
-  canRedo: boolean;
   onPlayerUpdate(players: MutablePlayerData[]): void;
   onTurnOrderUpdate(turnOrder: PlayerColor[]): void;
   onRoundUpdate(round: number): void;
   onAvailableCitiesUpdate(cities: MutableAvailableCity[]): void;
   onColorChange(playerIndex: number, newColor: PlayerColor): void;
-  onUndo(): void;
-  onRedo(): void;
 }
 
 export function EditorPanel({
   gameKey,
-  gameData,
   players,
   turnOrder,
   roundNumber,
   availableCities,
-  canUndo,
-  canRedo,
   onPlayerUpdate,
   onTurnOrderUpdate,
   onRoundUpdate,
   onAvailableCitiesUpdate,
   onColorChange,
-  onUndo,
-  onRedo,
 }: EditorPanelProps) {
-  const { setEditorData, isPending } = useSetEditorData();
-
-  const save = useCallback(() => {
-    setEditorData(gameData);
-  }, [gameData, setEditorData]);
-
   return (
     <div className={styles.editorPanel}>
-      <Segment>
-        <div className={styles.topActions}>
-          <div className={styles.undoRedo}>
-            <Button
-              icon="undo"
-              size="small"
-              compact
-              disabled={!canUndo}
-              onClick={onUndo}
-              title="Undo"
-            />
-            <Button
-              icon="redo"
-              size="small"
-              compact
-              disabled={!canRedo}
-              onClick={onRedo}
-              title="Redo"
-            />
-          </div>
-          <Button
-            primary
-            onClick={save}
-            disabled={isPending}
-            loading={isPending}
-          >
-            Save Changes
-          </Button>
-        </div>
-      </Segment>
-
       <Segment>
         <Header as="h3">Game Settings</Header>
         <NumberField
@@ -287,6 +239,7 @@ function AvailableCityHex({
   onAddGood,
 }: AvailableCityHexProps) {
   const mapSettings = MapRegistry.singleton.get(gameKey);
+  const [removing, setRemoving] = useState(false);
 
   const cityGrid = useMemo(() => {
     const newCity = new City(Coordinates.from({ q: 0, r: 0 }), {
@@ -304,27 +257,42 @@ function AvailableCityHex({
     <div className={styles.availableCityItem}>
       <HexGrid grid={cityGrid} />
       <div className={styles.availableCityActions}>
-        {city.goods.map((good, gi) => (
-          <Label
-            key={gi}
-            size="mini"
-            style={{ cursor: "pointer" }}
-            onClick={() => onRemoveGood(gi)}
-          >
-            {goodToString(good)} x
-          </Label>
-        ))}
-        <Dropdown
-          icon="plus"
-          className="icon mini"
-          button
+        <Button
+          icon="minus"
+          size="mini"
           compact
+          color={removing ? "red" : undefined}
+          onClick={() => setRemoving(!removing)}
+          disabled={city.goods.length === 0}
+        />
+        <Dropdown
+          trigger={<Button icon="plus" size="mini" compact />}
           options={goodOptions}
           onChange={(_, data) => onAddGood(data.value as Good)}
           selectOnBlur={false}
-          value={undefined}
+          icon={null}
+          pointing="top left"
         />
       </div>
+      {removing && city.goods.length > 0 && (
+        <div className={styles.removableGoods}>
+          {city.goods.map((good, gi) => (
+            <Label
+              key={gi}
+              size="mini"
+              color="red"
+              basic
+              style={{ cursor: "pointer" }}
+              onClick={() => {
+                onRemoveGood(gi);
+                if (city.goods.length <= 1) setRemoving(false);
+              }}
+            >
+              {goodToString(good)}
+            </Label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
