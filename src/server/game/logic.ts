@@ -37,6 +37,11 @@ export async function initializeEditor(
     "not enough players to initialize editor",
   );
 
+  // If editor data already exists, return as-is to avoid wiping saved edits.
+  if (game.gameData != null) {
+    return game.toApi();
+  }
+
   const users = await Promise.all(
     game.playerIds.map((id) => UserDao.getUser(id)),
   );

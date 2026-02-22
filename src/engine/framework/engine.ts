@@ -14,7 +14,7 @@ import { PlayerHelper } from "../game/player";
 import { Random } from "../game/random";
 import { ROUND, RoundEngine } from "../game/round";
 import { PlayerUser } from "../game/starter";
-import { BAG, injectCurrentPlayer } from "../game/state";
+import { BAG, CURRENT_PLAYER, injectCurrentPlayer } from "../game/state";
 import { MOVE_STATE } from "../move/state";
 import { getPhaseString, Phase } from "../state/phase";
 import { inject, injectState, setInjectionContext } from "./execution_context";
@@ -127,13 +127,22 @@ export class EngineProcessor {
       const bag = this.state.get(BAG);
       this.state.set(BAG, this.random.shuffle([...bag]));
 
-      // Read the starting round from editor state, then delete it so
-      // RoundEngine.start()'s initState call works normally.
+      // Read the starting round from editor state, then delete lifecycle
+      // state so the lifecycle can re-initialize them via initState().
       const startingRound = this.state.isInitialized(ROUND)
         ? (this.state.get(ROUND) as number)
         : 1;
       if (this.state.isInitialized(ROUND)) {
         this.state.delete(ROUND);
+      }
+      if (this.state.isInitialized(PHASE)) {
+        this.state.delete(PHASE);
+      }
+      if (this.state.isInitialized(CURRENT_PLAYER)) {
+        this.state.delete(CURRENT_PLAYER);
+      }
+      if (this.state.isInitialized(MOVE_STATE)) {
+        this.state.delete(MOVE_STATE);
       }
 
       this.gameEngine.startFromEditorData(startingRound);

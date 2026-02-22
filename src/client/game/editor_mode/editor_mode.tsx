@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Button, Header, Segment } from "semantic-ui-react";
+import { Button, Dropdown, Header, Segment } from "semantic-ui-react";
 import { GameApi } from "../../../api/game";
 import { useSetEditorData } from "../../services/game";
 import { SerializedGameData } from "../../../engine/framework/state";
@@ -287,11 +287,13 @@ export function EditorMode({ game }: EditorModeProps) {
         onColorChange={onColorChange}
       />
       <EditorToolbar
+        gameId={game.id}
         gameData={localGameData}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={onUndo}
         onRedo={onRedo}
+        onLoadSnapshot={pushState}
       />
       <EditorMap
         game={editedGame}
@@ -306,29 +308,93 @@ export function EditorMode({ game }: EditorModeProps) {
 }
 
 interface EditorToolbarProps {
+  gameId: number;
   gameData: string;
   canUndo: boolean;
   canRedo: boolean;
   onUndo(): void;
   onRedo(): void;
+  onLoadSnapshot(data: string): void;
+}
+
+interface Snapshot {
+  name: string;
+  data: string;
+  timestamp: number;
+}
+
+function snapshotStorageKey(gameId: number): string {
+  return `editor-snapshots-${gameId}`;
+}
+
+function loadSnapshots(gameId: number): Snapshot[] {
+  try {
+    const raw = localStorage.getItem(snapshotStorageKey(gameId));
+    return raw ? (JSON.parse(raw) as Snapshot[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSnapshots(gameId: number, snapshots: Snapshot[]): void {
+  localStorage.setItem(snapshotStorageKey(gameId), JSON.stringify(snapshots));
 }
 
 function EditorToolbar({
+  gameId,
   gameData,
   canUndo,
   canRedo,
   onUndo,
   onRedo,
+  onLoadSnapshot,
 }: EditorToolbarProps) {
   const { setEditorData, isPending } = useSetEditorData();
+  const [snapshots, setSnapshots] = useState<Snapshot[]>(() =>
+    loadSnapshots(gameId),
+  );
 
   const save = useCallback(() => {
     setEditorData(gameData);
   }, [gameData, setEditorData]);
 
+  const saveSnapshot = useCallback(() => {
+    const name = prompt("Snapshot name:", `Snapshot ${snapshots.length + 1}`);
+    if (name == null) return;
+    const snapshot: Snapshot = { name, data: gameData, timestamp: Date.now() };
+    const updated = [...snapshots, snapshot];
+    saveSnapshots(gameId, updated);
+    setSnapshots(updated);
+  }, [gameId, gameData, snapshots]);
+
+  const restoreSnapshot = useCallback(
+    (_: unknown, { value }: { value: number }) => {
+      const snapshot = snapshots[value];
+      if (snapshot == null) return;
+      onLoadSnapshot(snapshot.data);
+    },
+    [snapshots, onLoadSnapshot],
+  );
+
+  const deleteSnapshot = useCallback(
+    (index: number) => {
+      const updated = snapshots.filter((_, i) => i !== index);
+      saveSnapshots(gameId, updated);
+      setSnapshots(updated);
+    },
+    [gameId, snapshots],
+  );
+
   return (
     <Segment>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "8px",
+        }}
+      >
         <div style={{ display: "flex", gap: "4px" }}>
           <Button
             icon="undo"
@@ -346,6 +412,38 @@ function EditorToolbar({
             onClick={onRedo}
             title="Redo"
           />
+        </div>
+        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          <Button size="small" compact icon="camera" onClick={saveSnapshot} title="Save snapshot" />
+          {snapshots.length > 0 && (
+            <Dropdown
+              button
+              className="small compact"
+              text="Snapshots"
+            >
+              <Dropdown.Menu>
+                {snapshots.map((s, i) => (
+                  <Dropdown.Item
+                    key={i}
+                    onClick={() => restoreSnapshot(null, { value: i })}
+                  >
+                    <span style={{ flex: 1 }}>{s.name}</span>
+                    <Button
+                      icon="delete"
+                      size="mini"
+                      compact
+                      negative
+                      style={{ marginLeft: 8, padding: "2px 6px" }}
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        deleteSnapshot(i);
+                      }}
+                    />
+                  </Dropdown.Item>
+                ))}
+              </Dropdown.Menu>
+            </Dropdown>
+          )}
         </div>
         <Button
           primary
