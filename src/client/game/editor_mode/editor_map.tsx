@@ -266,14 +266,18 @@ function InternalEditorMap({
         coordinates={goodDialogCoords}
         cityData={goodDialogCity}
         onAdd={(good) => {
-          if (goodDialogCoords == null) return;
+          if (goodDialogCoords == null || goodDialogCity == null) return;
           updateGridSpace(goodDialogCoords, (s) => {
             const goods = (s["goods"] as Good[]) ?? [];
             return { ...s, goods: [...goods, good] };
           });
+          setGoodDialogCity({
+            ...goodDialogCity,
+            goods: [...goodDialogCity.goods, good],
+          });
         }}
         onRemove={(good) => {
-          if (goodDialogCoords == null) return;
+          if (goodDialogCoords == null || goodDialogCity == null) return;
           updateGridSpace(goodDialogCoords, (s) => {
             const goods = (s["goods"] as Good[]) ?? [];
             const idx = goods.lastIndexOf(good);
@@ -284,6 +288,12 @@ function InternalEditorMap({
             }
             return s;
           });
+          const idx = goodDialogCity.goods.lastIndexOf(good);
+          if (idx >= 0) {
+            const newGoods = [...goodDialogCity.goods];
+            newGoods.splice(idx, 1);
+            setGoodDialogCity({ ...goodDialogCity, goods: newGoods });
+          }
         }}
         onErase={() => {
           if (goodDialogCoords == null || goodDialogCity == null) return;
